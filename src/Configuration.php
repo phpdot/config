@@ -56,14 +56,126 @@ final class Configuration
     /**
      * Get a configuration value by dot-notation key.
      *
-     * @param string $key The dot-notation key
-     * @param int|float|string|bool|null $default The default value if key is not found
+     * Returns scalar values from the O(1) flat map. Falls back to walking
+     * the resolved tree for nested array access.
      *
-     * @return int|float|string|bool|null The configuration value or default
+     * @param string $key The dot-notation key
+     * @param mixed $default The default value if key is not found
+     *
+     * @return mixed The configuration value or default
      */
-    public function get(string $key, int|float|string|bool|null $default = null): int|float|string|bool|null
+    public function get(string $key, mixed $default = null): mixed
     {
-        return $this->flat[$key] ?? $default;
+        // Fast path: scalar value from flat map
+        if (array_key_exists($key, $this->flat)) {
+            return $this->flat[$key];
+        }
+
+        // Slow path: walk resolved tree for nested arrays
+        $parts = explode('.', $key);
+        $current = $this->resolved;
+
+        foreach ($parts as $part) {
+            if (!is_array($current) || !array_key_exists($part, $current)) {
+                return $default;
+            }
+            $current = $current[$part];
+        }
+
+        return $current;
+    }
+
+    /**
+     * Get a string configuration value.
+     *
+     * @param string $key The dot-notation key
+     * @param string $default The default value
+     */
+    public function string(string $key, string $default = ''): string
+    {
+        $value = $this->get($key);
+
+        return is_string($value) ? $value : $default;
+    }
+
+    /**
+     * Get an integer configuration value.
+     *
+     * @param string $key The dot-notation key
+     * @param int $default The default value
+     */
+    public function integer(string $key, int $default = 0): int
+    {
+        $value = $this->get($key);
+
+        if (is_int($value)) {
+            return $value;
+        }
+
+        return is_numeric($value) ? (int) $value : $default;
+    }
+
+    /**
+     * Get a float configuration value.
+     *
+     * @param string $key The dot-notation key
+     * @param float $default The default value
+     */
+    public function float(string $key, float $default = 0.0): float
+    {
+        $value = $this->get($key);
+
+        if (is_float($value)) {
+            return $value;
+        }
+
+        return is_numeric($value) ? (float) $value : $default;
+    }
+
+    /**
+     * Get a boolean configuration value.
+     *
+     * Interprets 'true'/'false'/'yes'/'no'/'on'/'off'/'1'/'0' as booleans.
+     *
+     * @param string $key The dot-notation key
+     * @param bool $default The default value
+     */
+    public function boolean(string $key, bool $default = false): bool
+    {
+        $value = $this->get($key);
+
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        if (is_string($value)) {
+            return match (strtolower($value)) {
+                'true', '1', 'yes', 'on' => true,
+                'false', '0', 'no', 'off' => false,
+                default => $default,
+            };
+        }
+
+        if (is_int($value)) {
+            return $value !== 0;
+        }
+
+        return $default;
+    }
+
+    /**
+     * Get an array configuration value.
+     *
+     * @param string $key The dot-notation key
+     * @param array<mixed> $default The default value
+     *
+     * @return array<mixed> The configuration array or default
+     */
+    public function array(string $key, array $default = []): array
+    {
+        $value = $this->get($key);
+
+        return is_array($value) ? $value : $default;
     }
 
     /**
@@ -75,7 +187,22 @@ final class Configuration
      */
     public function has(string $key): bool
     {
-        return array_key_exists($key, $this->flat);
+        if (array_key_exists($key, $this->flat)) {
+            return true;
+        }
+
+        // Check resolved tree for array keys
+        $parts = explode('.', $key);
+        $current = $this->resolved;
+
+        foreach ($parts as $part) {
+            if (!is_array($current) || !array_key_exists($part, $current)) {
+                return false;
+            }
+            $current = $current[$part];
+        }
+
+        return true;
     }
 
     /**

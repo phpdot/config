@@ -26,30 +26,32 @@ $config->get('database.missing', 'default');  // 'default'
 
 ## Architecture
 
-```
-config/*.php files
-      │
-      ▼
-ConfigLoader         Scans directory, requires each file
-      │
-      ▼
-ConfigMerger         Overlays current environment values
-      │
-      ▼
-ConfigResolver       Executes closures, resolves {section.key} placeholders
-      │
-      ▼
-Configuration        Flattens to dot-notation, provides get/has/section/dto
-      │
-      ▼
-ConfigCache          Optional: dumps to single PHP file for production
+```mermaid
+graph TD
+    FILES["config/*.php files<br/><br/>Each file returns an array.<br/>The lowercased filename becomes<br/>the section name."]
+
+    subgraph Pipeline
+        direction TB
+        LOAD["ConfigLoader<br/><br/>Scans directory, requires each file"]
+        MERGE["ConfigMerger<br/><br/>Overlays the active environment's<br/>values onto the base section"]
+        RESOLVE["ConfigResolver<br/><br/>Executes closures and resolves<br/>section.key placeholders"]
+        LOAD --> MERGE --> RESOLVE
+    end
+
+    CFG["Configuration<br/><br/>Flattens to dot-notation,<br/>exposes get / has / section /<br/>typed getters / dto."]
+
+    CACHE["ConfigCache<br/><br/>Optional. Dumps the resolved<br/>tree to a single PHP file for<br/>production fast-boot."]
+
+    FILES --> Pipeline
+    Pipeline --> CFG
+    CFG -.optional.-> CACHE
 ```
 
 ---
 
 ## Config Files
 
-Each file in the config directory returns an array. The filename becomes the section name.
+Each file in the config directory returns an array. The lowercased filename (without `.php`) becomes the section name — `Database.php` and `database.php` both yield section `database`.
 
 ```php
 // config/database.php
@@ -183,6 +185,54 @@ $db->debug;   // false (bool, auto-cast)
 
 No base class needed. No interface needed. Config keys matched to constructor parameter names. Types auto-cast for scalars. Parameters with defaults are optional. Cached per section+class.
 
+### Nested DTOs
+
+When a constructor parameter is typed as a class and the matching value is an array, the array is recursively hydrated into that class. One section can drive multiple typed sub-DTOs:
+
+```php
+readonly class CookieConfig
+{
+    public function __construct(
+        public bool $secure = true,
+        public bool $httpOnly = true,
+        public string $sameSite = 'Lax',
+    ) {}
+}
+
+readonly class HttpConfig
+{
+    /**
+     * @param list<string> $trustedProxies
+     */
+    public function __construct(
+        public array $trustedProxies = [],
+        public int $trustedHeaders = 0,
+        public CookieConfig $cookie = new CookieConfig(),
+    ) {}
+}
+```
+
+```php
+// config/http.php
+return [
+    'trustedProxies' => ['10.0.0.0/8'],
+    'trustedHeaders' => 31,
+    'cookie' => [
+        'secure'   => true,
+        'sameSite' => 'Strict',
+    ],
+];
+```
+
+```php
+$http = $config->dto('http', HttpConfig::class);
+$http->cookie->secure;     // true
+$http->cookie->sameSite;   // 'Strict'
+$http->cookie->httpOnly;   // true (default — key absent in config file)
+```
+
+Recursion is unbounded — multi-level nesting works the same way. Missing inner keys throw `InvalidArgumentException` (unless the parameter has a default).
+
 ---
 
 ## Caching
@@ -212,17 +262,31 @@ ConfigCache::clear(__DIR__ . '/storage/cache/config.php');
 ## Full API
 
 ```php
-$config->get('key', $default);              // scalar value or default
-$config->has('key');                         // bool
-$config->section('database');               // full array for section
-$config->sections();                        // ['app', 'cache', 'database', ...]
-$config->search('database');                // all database.* keys
-$config->search('database', stripPrefix: true); // same, without prefix
-$config->all();                             // all flattened key-value pairs
-$config->dto('database', DbConfig::class);  // DTO hydration
-$config->reload();                          // re-run pipeline (clears cache)
-$config->getEnvironment();                  // current environment
-$config->getPath();                         // config directory path
+// Generic getter
+$config->get('key', $default);                    // mixed value or default
+$config->has('key');                              // bool
+
+// Typed getters — coerce to the requested type, fall back to default if mismatched
+$config->string('database.host', 'localhost');    // string
+$config->integer('database.port', 3306);          // int (parses numeric strings)
+$config->float('rate.threshold', 1.0);            // float
+$config->boolean('database.debug', false);        // bool — accepts true/false/1/0/yes/no/on/off
+$config->array('cache.servers', []);              // array
+
+// Aggregate access
+$config->section('database');                     // full nested array for the section
+$config->sections();                              // ['app', 'cache', 'database', ...]
+$config->search('database');                      // all database.* keys
+$config->search('database', stripPrefix: true);   // same, prefix removed
+$config->all();                                   // all flattened key-value pairs
+
+// DTO hydration (single + nested)
+$config->dto('database', DbConfig::class);        // hydrate a typed DTO
+
+// Lifecycle
+$config->reload();                                // re-run pipeline (clears any cache)
+$config->getEnvironment();                        // current environment name
+$config->getPath();                               // config directory path
 ```
 
 ---
@@ -252,7 +316,7 @@ src/
 ## Development
 
 ```bash
-composer test        # PHPUnit (78 tests)
+composer test        # PHPUnit (114 tests)
 composer analyse     # PHPStan level 10
 composer cs-fix      # PHP-CS-Fixer
 composer check       # All three

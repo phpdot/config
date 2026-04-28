@@ -416,6 +416,9 @@ final class Configuration
     /**
      * Cast a configuration value to the expected parameter type.
      *
+     * Scalars are coerced to int/float/string/bool. Arrays whose target type
+     * is a class are recursively hydrated as nested DTOs.
+     *
      * @param mixed $value The raw configuration value
      * @param ReflectionType|null $type The target parameter type
      *
@@ -429,6 +432,11 @@ final class Configuration
 
         $typeName = $type->getName();
 
+        if (is_array($value) && class_exists($typeName)) {
+            /** @var array<string, mixed> $value */
+            return $this->hydrateClass($typeName, $value);
+        }
+
         if (!is_scalar($value) && $value !== null) {
             return $value;
         }
@@ -440,6 +448,44 @@ final class Configuration
             'bool' => $this->castBool($value),
             default => $value,
         };
+    }
+
+    /**
+     * Hydrate a class from an associative array by matching constructor
+     * parameters to keys. Recurses through castValue() so nested DTOs and
+     * scalar coercion both work together.
+     *
+     * @param class-string $class
+     * @param array<string, mixed> $data
+     *
+     * @throws InvalidArgumentException If a required constructor parameter has no matching key
+     */
+    private function hydrateClass(string $class, array $data): object
+    {
+        $reflection = new ReflectionClass($class);
+        $constructor = $reflection->getConstructor();
+
+        if ($constructor === null) {
+            return $reflection->newInstance();
+        }
+
+        $args = [];
+
+        foreach ($constructor->getParameters() as $param) {
+            $name = $param->getName();
+
+            if (array_key_exists($name, $data)) {
+                $args[] = $this->castValue($data[$name], $param->getType());
+            } elseif ($param->isDefaultValueAvailable()) {
+                $args[] = $param->getDefaultValue();
+            } else {
+                throw new InvalidArgumentException(
+                    "Missing required key '{$name}' for nested DTO {$class}",
+                );
+            }
+        }
+
+        return $reflection->newInstanceArgs($args);
     }
 
     /**

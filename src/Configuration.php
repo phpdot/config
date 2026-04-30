@@ -430,6 +430,10 @@ final class Configuration
             return $value;
         }
 
+        if ($value === null && $type->allowsNull()) {
+            return null;
+        }
+
         $typeName = $type->getName();
 
         if (is_array($value) && class_exists($typeName)) {

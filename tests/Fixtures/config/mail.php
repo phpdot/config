@@ -1,0 +1,9 @@
+<?php
+
+declare(strict_types=1);
+
+return [
+    'from_name' => '{app.name}',
+    'from_url' => '{app.url}/unsubscribe',
+    'driver' => 'smtp',
+];

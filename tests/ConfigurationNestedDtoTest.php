@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace PHPdot\Config\Tests;
 
 use PHPdot\Config\Configuration;
+use PHPdot\Config\Exception\HydrationException;
 use PHPdot\Config\Tests\Stubs\CookieConfigStub;
 use PHPdot\Config\Tests\Stubs\DeepConfigStub;
 use PHPdot\Config\Tests\Stubs\HttpConfigStub;
@@ -85,7 +86,7 @@ final class ConfigurationNestedDtoTest extends TestCase
     #[Test]
     public function dtoNestedHydrationThrowsWhenInnerRequiredKeyMissing(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(HydrationException::class);
         $this->expectExceptionMessage('nested DTO');
 
         // 'nested' fixture has 'inner' but the inner DTO requires 'required' — not present.

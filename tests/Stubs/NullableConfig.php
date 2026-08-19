@@ -7,9 +7,9 @@ namespace PHPdot\Config\Tests\Stubs;
 final readonly class NullableConfig
 {
     public function __construct(
-        public ?string $cache = null,
-        public ?int $port = null,
-        public ?float $ratio = null,
-        public ?bool $debug = null,
+        public null|string $cache = null,
+        public null|int $port = null,
+        public null|float $ratio = null,
+        public null|bool $debug = null,
     ) {}
 }

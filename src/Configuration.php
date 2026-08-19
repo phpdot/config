@@ -14,7 +14,7 @@ declare(strict_types=1);
 
 namespace PHPdot\Config;
 
-use InvalidArgumentException;
+use PHPdot\Config\Exception\HydrationException;
 use PHPdot\Config\Loader\ConfigLoader;
 use PHPdot\Config\Merger\ConfigMerger;
 use PHPdot\Config\Resolver\ConfigResolver;
@@ -54,7 +54,7 @@ final class Configuration
         private readonly string $path,
         private readonly string $environment = '',
         private readonly array $environments = [],
-        private readonly ?string $cachePath = null,
+        private readonly null|string $cachePath = null,
     ) {
         $this->load();
     }
@@ -311,7 +311,7 @@ final class Configuration
      * @param string $section The configuration section name
      * @param class-string<T> $class The DTO class name
      *
-     * @throws InvalidArgumentException If a required parameter is missing from config
+     * @throws HydrationException If a required parameter is missing from config
      *
      * @return T The hydrated DTO instance
      */
@@ -348,7 +348,7 @@ final class Configuration
             } elseif ($param->isDefaultValueAvailable()) {
                 $args[] = $param->getDefaultValue();
             } else {
-                throw new InvalidArgumentException(
+                throw new HydrationException(
                     "Missing required config key '{$name}' in section '{$section}' for {$class}",
                 );
             }
@@ -452,7 +452,7 @@ final class Configuration
      *
      * @return mixed The cast value
      */
-    private function castValue(mixed $value, ?ReflectionType $type): mixed
+    private function castValue(mixed $value, null|ReflectionType $type): mixed
     {
         if (!$type instanceof ReflectionNamedType) {
             return $value;
@@ -463,6 +463,22 @@ final class Configuration
         }
 
         $typeName = $type->getName();
+
+        if (enum_exists($typeName)) {
+            if ($value instanceof $typeName) {
+                return $value;
+            }
+
+            if ((is_string($value) || is_int($value)) && is_subclass_of($typeName, \BackedEnum::class)) {
+                return $typeName::from($value);
+            }
+
+            throw new HydrationException(sprintf(
+                'Cannot hydrate enum %s from %s — use a backed value or the enum case itself.',
+                $typeName,
+                get_debug_type($value),
+            ));
+        }
 
         if (is_array($value) && class_exists($typeName)) {
             /**
@@ -492,7 +508,7 @@ final class Configuration
      * @param class-string $class
      * @param array<string, mixed> $data
      *
-     * @throws InvalidArgumentException If a required constructor parameter has no matching key
+     * @throws HydrationException If a required constructor parameter has no matching key
      *
      * @return object
      */
@@ -515,7 +531,7 @@ final class Configuration
             } elseif ($param->isDefaultValueAvailable()) {
                 $args[] = $param->getDefaultValue();
             } else {
-                throw new InvalidArgumentException(
+                throw new HydrationException(
                     "Missing required key '{$name}' for nested DTO {$class}",
                 );
             }

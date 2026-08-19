@@ -53,7 +53,7 @@ final class ConfigCache
      *
      * @return array<string, mixed>|null The cached configuration, or null if not available
      */
-    public static function read(string $path): ?array
+    public static function read(string $path): null|array
     {
         if (!is_file($path)) {
             return null;
